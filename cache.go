@@ -28,6 +28,9 @@ type Cache[V any] struct {
 // New creates a new Cache with the given max size and default TTL.
 // A zero TTL means entries don't expire by default.
 func New[V any](maxSize int, defaultTTL time.Duration) *Cache[V] {
+	if maxSize <= 0 {
+		panic("cachekit: maxSize must be greater than 0")
+	}
 	return &Cache[V]{
 		items:      make(map[string]*entry[V], maxSize),
 		maxSize:    maxSize,
@@ -149,8 +152,8 @@ func (c *Cache[V]) Size() int {
 
 // Keys returns all non-expired keys.
 func (c *Cache[V]) Keys() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	now := time.Now()
 	keys := make([]string, 0, len(c.items))
