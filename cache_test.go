@@ -289,6 +289,62 @@ func TestOverwriteUpdatesValue(t *testing.T) {
 	}
 }
 
+func TestOverwriteWithDifferentTTL(t *testing.T) {
+	c := New[string](10, time.Hour)
+	c.Set("key", "v1")
+	c.Set("key", "v2", WithTTL(50*time.Millisecond))
+
+	val, ok := c.Get("key")
+	if !ok || val != "v2" {
+		t.Fatalf("expected 'v2', got %q", val)
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	_, ok = c.Get("key")
+	if ok {
+		t.Fatal("expected key to expire with new short TTL")
+	}
+}
+
+func TestOverwriteWithDifferentTags(t *testing.T) {
+	c := New[string](10, 0)
+	c.Set("key", "v1", WithTags("tag1"))
+	c.Set("key", "v2", WithTags("tag2"))
+
+	// Old tag should no longer work
+	count := c.InvalidateByTag("tag1")
+	if count != 0 {
+		t.Fatal("expected old tag to not match after overwrite")
+	}
+
+	// New tag should work
+	count = c.InvalidateByTag("tag2")
+	if count != 1 {
+		t.Fatalf("expected 1 removed by new tag, got %d", count)
+	}
+}
+
+func TestRapidSequentialInsertions(t *testing.T) {
+	c := New[int](10, 0)
+	for i := 0; i < 100; i++ {
+		c.Set(fmt.Sprintf("key%d", i), i)
+	}
+
+	// Only 10 entries should remain
+	if c.Size() != 10 {
+		t.Fatalf("expected 10 entries after rapid inserts, got %d", c.Size())
+	}
+
+	// The last 10 entries should be present
+	for i := 90; i < 100; i++ {
+		_, ok := c.Get(fmt.Sprintf("key%d", i))
+		if !ok {
+			t.Fatalf("expected key%d to exist", i)
+		}
+	}
+}
+
 // Concurrency tests
 
 func TestConcurrentAccess(t *testing.T) {
