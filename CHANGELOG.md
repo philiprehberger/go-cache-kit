@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Add badges and Development section to README
+
 ## 0.2.1
 
 - Add tests for overwriting entries with different TTL and tags

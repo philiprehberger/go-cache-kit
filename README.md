@@ -1,5 +1,9 @@
 # go-cache-kit
 
+[![CI](https://github.com/philiprehberger/go-cache-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/philiprehberger/go-cache-kit/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/philiprehberger/go-cache-kit.svg)](https://pkg.go.dev/github.com/philiprehberger/go-cache-kit)
+[![License](https://img.shields.io/github/license/philiprehberger/go-cache-kit)](LICENSE)
+
 Generic in-memory LRU cache with TTL, tags, and thread safety for Go.
 
 ## Installation
@@ -55,6 +59,13 @@ cache.Delete("key")   // delete single entry
 cache.Keys()          // list all non-expired keys
 cache.Size()          // current entry count
 cache.Clear()         // remove everything
+```
+
+## Development
+
+```bash
+go test ./...
+go vet ./...
 ```
 
 ## License
