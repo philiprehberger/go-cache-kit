@@ -99,6 +99,29 @@ cache.Size()          // current entry count
 cache.Clear()         // remove everything
 ```
 
+## API
+
+| Function / Method | Description |
+|---|---|
+| `New[V any](maxSize int, defaultTTL time.Duration) *Cache[V]` | Create a new LRU cache with max size and default TTL |
+| `(*Cache[V]).Set(key string, value V, opts ...SetOption)` | Add or update an entry in the cache |
+| `(*Cache[V]).Get(key string) (V, bool)` | Retrieve a value by key; returns false if missing or expired |
+| `(*Cache[V]).Has(key string) bool` | Check if a key exists and is not expired |
+| `(*Cache[V]).Delete(key string) bool` | Remove an entry by key; returns true if found |
+| `(*Cache[V]).GetOrSet(key string, factory func() V, opts ...SetOption) V` | Return cached value or compute and cache it on miss |
+| `(*Cache[V]).GetMany(keys []string) map[string]V` | Retrieve multiple values; omits missing or expired keys |
+| `(*Cache[V]).InvalidateByTag(tag string) int` | Remove all entries with the given tag; returns count removed |
+| `(*Cache[V]).DeleteWhere(predicate func(key string, value V) bool) int` | Remove all entries matching the predicate; returns count removed |
+| `(*Cache[V]).Clear()` | Remove all entries from the cache |
+| `(*Cache[V]).Size() int` | Return the current number of entries |
+| `(*Cache[V]).Keys() []string` | Return all non-expired keys |
+| `(*Cache[V]).OnEvict(fn func(key string, value V))` | Register a callback for eviction events |
+| `(*Cache[V]).Stats() CacheStats` | Return hit, miss, and eviction counters |
+| `WithTTL(d time.Duration) SetOption` | Override the default TTL for a Set call |
+| `WithTags(tags ...string) SetOption` | Associate tags with an entry |
+| `CacheStats` | Struct with `Hits`, `Misses`, and `Evictions` counters (int64) |
+| `SetOption` | Functional option type for configuring Set calls |
+
 ## Development
 
 ```bash
