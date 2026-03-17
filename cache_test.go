@@ -414,3 +414,293 @@ func TestMaxSizeNegativePanics(t *testing.T) {
 	}()
 	New[string](-1, 0)
 }
+
+// GetOrSet tests
+
+func TestGetOrSetMiss(t *testing.T) {
+	c := New[string](10, 0)
+	calls := 0
+	val := c.GetOrSet("key", func() string {
+		calls++
+		return "computed"
+	})
+	if val != "computed" {
+		t.Fatalf("expected 'computed', got %q", val)
+	}
+	if calls != 1 {
+		t.Fatalf("expected factory called once, got %d", calls)
+	}
+	// Verify it was cached
+	v, ok := c.Get("key")
+	if !ok || v != "computed" {
+		t.Fatal("expected key to be cached after GetOrSet")
+	}
+}
+
+func TestGetOrSetHit(t *testing.T) {
+	c := New[string](10, 0)
+	c.Set("key", "existing")
+	calls := 0
+	val := c.GetOrSet("key", func() string {
+		calls++
+		return "computed"
+	})
+	if val != "existing" {
+		t.Fatalf("expected 'existing', got %q", val)
+	}
+	if calls != 0 {
+		t.Fatalf("expected factory not called, got %d calls", calls)
+	}
+}
+
+func TestGetOrSetWithOptions(t *testing.T) {
+	c := New[string](10, 0)
+	c.GetOrSet("key", func() string { return "val" }, WithTTL(50*time.Millisecond))
+
+	_, ok := c.Get("key")
+	if !ok {
+		t.Fatal("expected key to exist before TTL")
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	_, ok = c.Get("key")
+	if ok {
+		t.Fatal("expected key to expire with TTL from GetOrSet")
+	}
+}
+
+// GetMany tests
+
+func TestGetMany(t *testing.T) {
+	c := New[string](10, 0)
+	c.Set("a", "1")
+	c.Set("b", "2")
+	c.Set("c", "3")
+
+	result := c.GetMany([]string{"a", "c", "missing"})
+	if len(result) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(result))
+	}
+	if result["a"] != "1" {
+		t.Fatalf("expected '1' for 'a', got %q", result["a"])
+	}
+	if result["c"] != "3" {
+		t.Fatalf("expected '3' for 'c', got %q", result["c"])
+	}
+	if _, ok := result["missing"]; ok {
+		t.Fatal("expected 'missing' to be absent")
+	}
+}
+
+func TestGetManyEmpty(t *testing.T) {
+	c := New[string](10, 0)
+	result := c.GetMany([]string{})
+	if len(result) != 0 {
+		t.Fatalf("expected empty map, got %d entries", len(result))
+	}
+}
+
+func TestGetManySkipsExpired(t *testing.T) {
+	c := New[string](10, 50*time.Millisecond)
+	c.Set("expires", "val")
+	c.Set("stays", "val", WithTTL(time.Hour))
+
+	time.Sleep(60 * time.Millisecond)
+
+	result := c.GetMany([]string{"expires", "stays"})
+	if len(result) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(result))
+	}
+	if _, ok := result["stays"]; !ok {
+		t.Fatal("expected 'stays' in results")
+	}
+}
+
+// OnEvict tests
+
+func TestOnEvictLRU(t *testing.T) {
+	c := New[string](3, 0)
+	var evictedKey string
+	var evictedVal string
+	c.OnEvict(func(key string, value string) {
+		evictedKey = key
+		evictedVal = value
+	})
+
+	c.Set("a", "1")
+	c.Set("b", "2")
+	c.Set("c", "3")
+	c.Set("d", "4") // evicts "a"
+
+	if evictedKey != "a" {
+		t.Fatalf("expected evicted key 'a', got %q", evictedKey)
+	}
+	if evictedVal != "1" {
+		t.Fatalf("expected evicted value '1', got %q", evictedVal)
+	}
+}
+
+func TestOnEvictTTL(t *testing.T) {
+	c := New[string](10, 50*time.Millisecond)
+	var evictedKey string
+	c.OnEvict(func(key string, value string) {
+		evictedKey = key
+	})
+
+	c.Set("key", "val")
+	time.Sleep(60 * time.Millisecond)
+
+	// Get triggers TTL eviction
+	c.Get("key")
+
+	if evictedKey != "key" {
+		t.Fatalf("expected evicted key 'key', got %q", evictedKey)
+	}
+}
+
+func TestOnEvictNotCalledOnDelete(t *testing.T) {
+	c := New[string](10, 0)
+	called := false
+	c.OnEvict(func(key string, value string) {
+		called = true
+	})
+
+	c.Set("key", "val")
+	c.Delete("key")
+
+	if called {
+		t.Fatal("expected OnEvict not to be called on explicit Delete")
+	}
+}
+
+// Stats tests
+
+func TestStatsHitsAndMisses(t *testing.T) {
+	c := New[string](10, 0)
+	c.Set("key", "val")
+
+	c.Get("key")     // hit
+	c.Get("key")     // hit
+	c.Get("missing") // miss
+
+	stats := c.Stats()
+	if stats.Hits != 2 {
+		t.Fatalf("expected 2 hits, got %d", stats.Hits)
+	}
+	if stats.Misses != 1 {
+		t.Fatalf("expected 1 miss, got %d", stats.Misses)
+	}
+}
+
+func TestStatsEvictions(t *testing.T) {
+	c := New[string](2, 0)
+	c.Set("a", "1")
+	c.Set("b", "2")
+	c.Set("c", "3") // evicts "a"
+	c.Set("d", "4") // evicts "b"
+
+	stats := c.Stats()
+	if stats.Evictions != 2 {
+		t.Fatalf("expected 2 evictions, got %d", stats.Evictions)
+	}
+}
+
+func TestStatsTTLEviction(t *testing.T) {
+	c := New[string](10, 50*time.Millisecond)
+	c.Set("key", "val")
+
+	time.Sleep(60 * time.Millisecond)
+	c.Get("key") // triggers TTL eviction
+
+	stats := c.Stats()
+	if stats.Evictions != 1 {
+		t.Fatalf("expected 1 eviction, got %d", stats.Evictions)
+	}
+}
+
+func TestStatsInitiallyZero(t *testing.T) {
+	c := New[string](10, 0)
+	stats := c.Stats()
+	if stats.Hits != 0 || stats.Misses != 0 || stats.Evictions != 0 {
+		t.Fatalf("expected all stats to be 0, got %+v", stats)
+	}
+}
+
+// DeleteWhere tests
+
+func TestDeleteWhere(t *testing.T) {
+	c := New[int](10, 0)
+	c.Set("a", 1)
+	c.Set("b", 2)
+	c.Set("c", 3)
+	c.Set("d", 4)
+
+	removed := c.DeleteWhere(func(key string, value int) bool {
+		return value%2 == 0
+	})
+	if removed != 2 {
+		t.Fatalf("expected 2 removed, got %d", removed)
+	}
+	if c.Size() != 2 {
+		t.Fatalf("expected size 2, got %d", c.Size())
+	}
+
+	_, ok := c.Get("a")
+	if !ok {
+		t.Fatal("expected 'a' to survive")
+	}
+	_, ok = c.Get("c")
+	if !ok {
+		t.Fatal("expected 'c' to survive")
+	}
+}
+
+func TestDeleteWhereNoMatch(t *testing.T) {
+	c := New[string](10, 0)
+	c.Set("a", "1")
+
+	removed := c.DeleteWhere(func(key string, value string) bool {
+		return false
+	})
+	if removed != 0 {
+		t.Fatalf("expected 0 removed, got %d", removed)
+	}
+	if c.Size() != 1 {
+		t.Fatalf("expected size 1, got %d", c.Size())
+	}
+}
+
+func TestDeleteWhereAll(t *testing.T) {
+	c := New[string](10, 0)
+	c.Set("a", "1")
+	c.Set("b", "2")
+
+	removed := c.DeleteWhere(func(key string, value string) bool {
+		return true
+	})
+	if removed != 2 {
+		t.Fatalf("expected 2 removed, got %d", removed)
+	}
+	if c.Size() != 0 {
+		t.Fatalf("expected size 0, got %d", c.Size())
+	}
+}
+
+func TestDeleteWhereByKeyPrefix(t *testing.T) {
+	c := New[string](10, 0)
+	c.Set("user:1", "alice")
+	c.Set("user:2", "bob")
+	c.Set("post:1", "hello")
+
+	removed := c.DeleteWhere(func(key string, value string) bool {
+		return len(key) > 4 && key[:5] == "user:"
+	})
+	if removed != 2 {
+		t.Fatalf("expected 2 removed, got %d", removed)
+	}
+	_, ok := c.Get("post:1")
+	if !ok {
+		t.Fatal("expected 'post:1' to survive")
+	}
+}

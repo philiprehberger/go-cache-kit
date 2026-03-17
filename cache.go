@@ -3,6 +3,7 @@ package cachekit
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,6 +16,13 @@ type entry[V any] struct {
 	next      *entry[V]
 }
 
+// CacheStats holds hit, miss, and eviction counters.
+type CacheStats struct {
+	Hits      int64
+	Misses    int64
+	Evictions int64
+}
+
 // Cache is a thread-safe in-memory LRU cache with TTL and tag support.
 type Cache[V any] struct {
 	mu         sync.RWMutex
@@ -23,6 +31,10 @@ type Cache[V any] struct {
 	tail       *entry[V]
 	maxSize    int
 	defaultTTL time.Duration
+	onEvict    func(key string, value V)
+	hits       atomic.Int64
+	misses     atomic.Int64
+	evictions  atomic.Int64
 }
 
 // New creates a new Cache with the given max size and default TTL.
@@ -84,17 +96,20 @@ func (c *Cache[V]) Get(key string) (V, bool) {
 
 	e, ok := c.items[key]
 	if !ok {
+		c.misses.Add(1)
 		var zero V
 		return zero, false
 	}
 
 	if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {
-		c.remove(e)
+		c.evictEntry(e)
+		c.misses.Add(1)
 		var zero V
 		return zero, false
 	}
 
 	c.moveToFront(e)
+	c.hits.Add(1)
 	return e.value, true
 }
 
@@ -206,19 +221,84 @@ func (c *Cache[V]) remove(e *entry[V]) {
 	delete(c.items, e.key)
 }
 
+// evictEntry removes an entry and fires the eviction callback.
+func (c *Cache[V]) evictEntry(e *entry[V]) {
+	key := e.key
+	value := e.value
+	c.remove(e)
+	c.evictions.Add(1)
+	if c.onEvict != nil {
+		c.onEvict(key, value)
+	}
+}
+
 func (c *Cache[V]) evict() {
 	// Try to evict an expired entry first
 	now := time.Now()
 	for _, e := range c.items {
 		if !e.expiresAt.IsZero() && now.After(e.expiresAt) {
-			c.remove(e)
+			c.evictEntry(e)
 			return
 		}
 	}
 	// Otherwise evict LRU
 	if c.tail != nil {
-		c.remove(c.tail)
+		c.evictEntry(c.tail)
 	}
+}
+
+// GetOrSet returns the cached value for key, or calls factory to compute and cache it.
+func (c *Cache[V]) GetOrSet(key string, factory func() V, opts ...SetOption) V {
+	if val, ok := c.Get(key); ok {
+		return val
+	}
+	val := factory()
+	c.Set(key, val, opts...)
+	return val
+}
+
+// GetMany returns all cached values for the given keys. Missing or expired keys are omitted.
+func (c *Cache[V]) GetMany(keys []string) map[string]V {
+	result := make(map[string]V, len(keys))
+	for _, key := range keys {
+		if val, ok := c.Get(key); ok {
+			result[key] = val
+		}
+	}
+	return result
+}
+
+// OnEvict registers a callback that fires when entries are evicted (LRU or TTL).
+func (c *Cache[V]) OnEvict(fn func(key string, value V)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onEvict = fn
+}
+
+// Stats returns cache hit, miss, and eviction counters.
+func (c *Cache[V]) Stats() CacheStats {
+	return CacheStats{
+		Hits:      c.hits.Load(),
+		Misses:    c.misses.Load(),
+		Evictions: c.evictions.Load(),
+	}
+}
+
+// DeleteWhere removes all entries matching the predicate. Returns the number of entries removed.
+func (c *Cache[V]) DeleteWhere(predicate func(key string, value V) bool) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var toRemove []*entry[V]
+	for _, e := range c.items {
+		if predicate(e.key, e.value) {
+			toRemove = append(toRemove, e)
+		}
+	}
+	for _, e := range toRemove {
+		c.remove(e)
+	}
+	return len(toRemove)
 }
 
 // SetOption configures a Set call.

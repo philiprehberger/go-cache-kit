@@ -4,7 +4,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/philiprehberger/go-cache-kit.svg)](https://pkg.go.dev/github.com/philiprehberger/go-cache-kit)
 [![License](https://img.shields.io/github/license/philiprehberger/go-cache-kit)](LICENSE)
 
-Generic in-memory LRU cache with TTL, tags, and thread safety for Go.
+Generic in-memory LRU cache with TTL, tags, eviction callbacks, stats, and thread safety for Go.
 
 ## Installation
 
@@ -40,6 +40,44 @@ cache.Set("user:2", userData, cachekit.WithTags("users", "team-b"))
 cache.Set("post:1", postData, cachekit.WithTags("posts", "team-a"))
 
 removed := cache.InvalidateByTag("team-a") // 2
+```
+
+### Compute-on-Miss
+
+```go
+val := cache.GetOrSet("user:42", func() string {
+    return fetchUserFromDB(42)
+}, cachekit.WithTTL(10*time.Minute))
+```
+
+### Batch Retrieval
+
+```go
+results := cache.GetMany([]string{"user:1", "user:2", "user:3"})
+// returns map[string]V with only the keys that exist and are not expired
+```
+
+### Eviction Callback
+
+```go
+cache.OnEvict(func(key string, value string) {
+    log.Printf("evicted %s", key)
+})
+```
+
+### Cache Stats
+
+```go
+stats := cache.Stats()
+fmt.Printf("hits=%d misses=%d evictions=%d\n", stats.Hits, stats.Misses, stats.Evictions)
+```
+
+### Conditional Deletion
+
+```go
+removed := cache.DeleteWhere(func(key string, value string) bool {
+    return strings.HasPrefix(key, "temp:")
+})
 ```
 
 ### LRU Eviction
