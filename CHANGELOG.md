@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Consolidate README badges onto single line
+
 ## 0.3.0
 
 - Add `GetOrSet` for compute-on-miss with optional `SetOption` support
