@@ -1,6 +1,6 @@
 # go-cache-kit
 
-[![CI](https://github.com/philiprehberger/go-cache-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/philiprehberger/go-cache-kit/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/philiprehberger/go-cache-kit.svg)](https://pkg.go.dev/github.com/philiprehberger/go-cache-kit) [![License](https://img.shields.io/github/license/philiprehberger/go-cache-kit)](LICENSE)
+[![CI](https://github.com/philiprehberger/go-cache-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/philiprehberger/go-cache-kit/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/philiprehberger/go-cache-kit.svg)](https://pkg.go.dev/github.com/philiprehberger/go-cache-kit) [![License](https://img.shields.io/github/license/philiprehberger/go-cache-kit)](LICENSE) [![Sponsor](https://img.shields.io/badge/sponsor-GitHub%20Sponsors-ec6cb9)](https://github.com/sponsors/philiprehberger)
 
 Generic in-memory LRU cache with TTL, tags, eviction callbacks, stats, and thread safety for Go
 
